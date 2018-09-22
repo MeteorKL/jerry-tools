@@ -200,7 +200,7 @@ def get_pointer(offset):
 
 
 def get_pointer_from_ecma_value_cmd(ecma_value):
-    return get_pointer_cmd(str(ecma_value) + "&(~0b111)")
+    return "(" + get_pointer_cmd(str(ecma_value) + "&(~0b111))")
 
 
 def get_pointer_from_ecma_value(ecma_value):
@@ -226,7 +226,10 @@ def ecma_value_t(ecma_value):
             return "DIRECT\t" + "INTEGER\t" + str(gdb.parse_and_eval(cmd))
     elif typ == ECMA_TYPE_STRING:
         return ecma_string_t(get_pointer_from_ecma_value(ecma_value))
-    # elif typ == ECMA_TYPE_FLOAT:
+    elif typ == ECMA_TYPE_FLOAT:  # 11.23 1234567890
+        cmd = "*(ecma_number_t*)(" + get_pointer_from_ecma_value_cmd(ecma_value) + ")"
+        print(cmd)
+        return "FLOAT\t" + str(gdb.parse_and_eval(cmd))
     # elif typ == ECMA_TYPE_OBJECT:
     elif typ == ECMA_TYPE_DIRECT_STRING:
         return "DIRECT_STRING\t" + direct_string(ecma_value)
