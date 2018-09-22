@@ -152,8 +152,7 @@ def ecma_string_t(ecma_string):
 def ecma_string(ecma_string):
     if ecma_string & 7 == ECMA_TYPE_DIRECT_STRING:
         return direct_string(ecma_string)
-    else:
-        return ecma_string_t(ecma_string)
+    return ecma_string_t(ecma_string)
 
 
 # -------------------------------------------------- ecma_object_t ----------------------------------------------------
@@ -188,12 +187,50 @@ def object_type_str(typ):
     return "UNKNOWN_OBJECT_TYPE"
 
 
+def get_pointer_cmd(offset):
+    return str(offset) + "+((uint32_t)&jerry_global_heap)"
+
+
+def get_pointer(offset):
+    if offset == 0:
+        return "NULL"
+    cmd = get_pointer_cmd(offset)
+    print(cmd)
+    return str(gdb.parse_and_eval(cmd))
+
+
+def get_pointer_from_ecma_value_cmd(ecma_value):
+    return get_pointer_cmd(str(ecma_value) + "&(~0b111)")
+
+
+def get_pointer_from_ecma_value(ecma_value):
+    cmd = get_pointer_from_ecma_value_cmd(ecma_value)
+    print(cmd)
+    return str(gdb.parse_and_eval(cmd))
+
+
 def ecma_object_t(ecma_object):
     return "UNKNOWN_ECMA_OBJECT"
 
 
 # --------------------------------------------------- ecma_value_t -----------------------------------------------------
 def ecma_value_t(ecma_value):
+    typ = ecma_value & 7
+    if typ == ECMA_TYPE_DIRECT:
+        flag = (ecma_value >> 3) & 1
+        if flag == 1:  # true false null
+            return "DIRECT\t" + "SIMPLE\t" + simple_value_str(ecma_value >> 4)
+        else:  # -1123
+            cmd = "(ecma_number_t)((int32_t)" + str(ecma_value) + ">>4)"
+            print(cmd)
+            return "DIRECT\t" + "INTEGER\t" + str(gdb.parse_and_eval(cmd))
+    elif typ == ECMA_TYPE_STRING:
+        return ecma_string_t(get_pointer_from_ecma_value(ecma_value))
+    # elif typ == ECMA_TYPE_FLOAT:
+    # elif typ == ECMA_TYPE_OBJECT:
+    elif typ == ECMA_TYPE_DIRECT_STRING:
+        return "DIRECT_STRING\t" + direct_string(ecma_value)
+    # elif typ == ECMA_TYPE_ERROR:
     return "UNKNOWN_ECMA_VALUE"
 
 
