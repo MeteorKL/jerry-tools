@@ -127,7 +127,7 @@ def ecma_string_t(ecma_string):
     cmd = cmd_base + ".refs_and_container"
     refs_and_container = int(gdb.parse_and_eval(cmd))
     refs = str(refs_and_container >> 4)
-    container = refs_and_container & 7
+    container = refs_and_container & 0b111
     if container == ECMA_STRING_CONTAINER_HEAP_UTF8_STRING:  # "zmj"
         cmd = cmd_base + ".u.utf8_string.size"
         size = str(gdb.parse_and_eval(cmd))
@@ -150,9 +150,31 @@ def ecma_string_t(ecma_string):
 
 
 def ecma_string(ecma_string):
-    if ecma_string & 7 == ECMA_TYPE_DIRECT_STRING:
+    if ecma_string & 0b111 == ECMA_TYPE_DIRECT_STRING:
         return direct_string(ecma_string)
     return ecma_string_t(ecma_string)
+
+
+# ------------------------------------------------------ utils --------------------------------------------------------
+def get_pointer_cmd(offset):
+    return str(offset) + "+((uint32_t)&jerry_global_heap)"
+
+
+def get_pointer(offset):
+    if offset == 0:
+        return "NULL"
+    cmd = get_pointer_cmd(offset)
+    return str(gdb.parse_and_eval(cmd))
+
+
+def get_pointer_from_ecma_value_cmd(ecma_value):
+    return get_pointer_cmd("(" + str(ecma_value) + "&(~0b111))")
+
+
+def get_pointer_from_ecma_value(ecma_value):
+    cmd = get_pointer_from_ecma_value_cmd(ecma_value)
+    print(cmd)
+    return str(gdb.parse_and_eval(cmd))
 
 
 # -------------------------------------------------- ecma_object_t ----------------------------------------------------
@@ -186,36 +208,33 @@ def object_type_str(typ):
         return "ARROW_FUNCTION"
     return "UNKNOWN_OBJECT_TYPE"
 
-
-def get_pointer_cmd(offset):
-    return str(offset) + "+((uint32_t)&jerry_global_heap)"
-
-
-def get_pointer(offset):
-    if offset == 0:
-        return "NULL"
-    cmd = get_pointer_cmd(offset)
-    print(cmd)
-    return str(gdb.parse_and_eval(cmd))
-
-
-def get_pointer_from_ecma_value_cmd(ecma_value):
-    return "(" + get_pointer_cmd(str(ecma_value) + "&(~0b111))")
-
-
-def get_pointer_from_ecma_value(ecma_value):
-    cmd = get_pointer_from_ecma_value_cmd(ecma_value)
-    print(cmd)
-    return str(gdb.parse_and_eval(cmd))
-
+ECMA_OBJECT_FLAG_BUILT_IN_OR_LEXICAL_ENV = 0x10
+ECMA_OBJECT_FLAG_EXTENSIBLE = 0x20
 
 def ecma_object_t(ecma_object):
-    return "UNKNOWN_ECMA_OBJECT"
+    cmd_base = "(*(ecma_object_t*)" + str(ecma_object) + ")"
+    print(cmd_base)
+    cmd = cmd_base + ".type_flags_refs"
+    type_flags_refs = int(gdb.parse_and_eval(cmd))
+    typ = type_flags_refs & 0b111
+    flag = (type_flags_refs >> 4) & 0b11
+    refs = str(type_flags_refs >> 6)
+    cmd = cmd_base + ".gc_next_cp"
+    gc_next_cp = int(gdb.parse_and_eval(cmd))
+    cmd = cmd_base + ".property_list_or_bound_object_cp"
+    property_list_or_bound_object = int(gdb.parse_and_eval(cmd))
+    cmd = cmd_base + ".prototype_or_outer_reference_cp"
+    prototype_or_outer_reference = int(gdb.parse_and_eval(cmd))
+    return object_type_str(typ) + "\tflag:" + str(flag) + \
+           "\trefs:" + refs + \
+           "\tnext_gc:" + get_pointer(gc_next_cp) + \
+           "\tproperty_list_or_bound_object:" + get_pointer(property_list_or_bound_object) + \
+           "\tprototype_or_outer_reference:" + get_pointer(prototype_or_outer_reference)
 
 
 # --------------------------------------------------- ecma_value_t -----------------------------------------------------
 def ecma_value_t(ecma_value):
-    typ = ecma_value & 7
+    typ = ecma_value & 0b111
     if typ == ECMA_TYPE_DIRECT:
         flag = (ecma_value >> 3) & 1
         if flag == 1:  # true false null
@@ -230,7 +249,8 @@ def ecma_value_t(ecma_value):
         cmd = "*(ecma_number_t*)(" + get_pointer_from_ecma_value_cmd(ecma_value) + ")"
         print(cmd)
         return "FLOAT\t" + str(gdb.parse_and_eval(cmd))
-    # elif typ == ECMA_TYPE_OBJECT:
+    elif typ == ECMA_TYPE_OBJECT:
+        return "OBJECT\t" + ecma_object_t(get_pointer_from_ecma_value(ecma_value))
     elif typ == ECMA_TYPE_DIRECT_STRING:
         return "DIRECT_STRING\t" + direct_string(ecma_value)
     # elif typ == ECMA_TYPE_ERROR:
@@ -265,7 +285,7 @@ class EcmaPrint(gdb.Command):
         elif argv[0] == "s":
             value = int(gdb.parse_and_eval("(uint32_t)" + argv[1]))
             print(value)
-            print(ecma_string_t(value))
+            print(ecma_string(value))
             return
         elif argv[0] == "o":
             value = int(gdb.parse_and_eval("(uint32_t)" + argv[1]))
@@ -277,4 +297,5 @@ class EcmaPrint(gdb.Command):
 
 
 # https://segmentfault.com/search?q=gdb&type=article&relatedObjectId=1200000000428141
+# https://sourceware.org/gdb/download/onlinedocs/gdb/Basic-Python.html#Basic-Python
 EcmaPrint()
